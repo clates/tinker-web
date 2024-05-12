@@ -2,12 +2,16 @@ import React from 'react'
 import { createHashRouter, RouteObject } from 'react-router-dom'
 import ErrorPage from './components/error-page'
 import { getDefaultLayout } from './components/layout'
-import HomePage from './pages/home'
+import ChatPage from './pages/chat'
 
 export const routerObjects: RouteObject[] = [
   {
     path: '/',
-    Component: HomePage,
+    Component: ChatPage,
+  },
+  {
+    path: 'chat',
+    Component: ChatPage,
   },
 ]
 
