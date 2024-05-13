@@ -56,39 +56,26 @@ export default function Home() {
     //makeFriendlyAI('Tinker')
   ])
   const [loading, setLoading] = useState(false)
-  const [streamSource, setStreamSource] = useState('')
   const [ttsPlayQueue, setTtsPlayQueue] = useState<string[]>([])
+  const [ttsPlayIndex, setTtsPlayIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioSourceRef = useRef<HTMLSourceElement>(null)
 
-  // Dequeue the TTS queue after audio playback.
-  useEffect(() => {
-    console.log('TTS Queue:', ttsPlayQueue.length)
-    if (audioRef.current === null) {
-      return
+  // When the audio ends, play the next item in the queue.
+  const onEndedCB = () => {
+    console.log(`TTS Queue ended, playing item ${ttsPlayIndex} of ${ttsPlayQueue.length} `)
+    if (audioRef.current !== null && ttsPlayIndex < ttsPlayQueue.length) {
+      audioRef.current.src = ttsPlayQueue[ttsPlayIndex] || ''
+      audioRef.current.load()
+      audioRef.current.play()
+      setTtsPlayIndex((_) => _ + 1)
+    } else {
+      console.log('TTS Queue is exhausted, resetting.')
+      setTtsPlayQueue([])
+      setTtsPlayIndex(0)
     }
-    if (!audioRef.current.onended) {
-      console.log('Setting the onended event.')
-      audioRef.current.onended = () => {
-        if (audioRef.current === null) {
-          return // typeguard
-        }
-        if (ttsPlayQueue.length > 0) {
-          audioRef.current.src = ttsPlayQueue[0] || ''
-          audioRef.current.load()
-          audioRef.current.play()
-          console.log('Dequeueing:', ttsPlayQueue.length)
-          setTtsPlayQueue((oldQueue) => oldQueue.slice(0, 1))
-        } else {
-          console.log('Dequeued all, stopping playback.')
-          // Reset the audio source
-          audioRef.current.src = ''
-          audioRef.current.load()
-        }
-      }
-    }
-  }, [ttsPlayQueue])
+  }
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -113,6 +100,7 @@ export default function Home() {
       let chatResponse = ''
       let ttsResponseEnqueue = ''
       const ttsSynthesizeQueue: string[] = []
+      let playedFirstBlob = false
 
       for await (const chunk of chatCompletion) {
         // Turn off loading, we have a response
@@ -146,16 +134,17 @@ export default function Home() {
           } as SpeechCreateParams)
           const responseBlob = await ttsResponse.blob()
           const audioSource = URL.createObjectURL(responseBlob)
+
+          console.log('Queueing TTS', audioSource)
           // Start the queue processing if this is the only item.
-          console.log(audioRef.current?.src)
-          if (audioRef.current?.src === '' || audioRef.current?.src === 'http://localhost:5000/chat') {
-            // Play the first item coming in and don't enqueue it.
+          setTtsPlayQueue((oldQueue) => [...oldQueue, audioSource])
+          if (audioRef.current !== null && !playedFirstBlob) {
+            console.log('Starting TTS Queue...')
             audioRef.current.src = audioSource || ''
             audioRef.current.load()
             audioRef.current.play()
-          } else {
-            console.log('Enqueueing onto:', ttsPlayQueue.length)
-            setTtsPlayQueue((oldQueue) => [...oldQueue, audioSource])
+            playedFirstBlob = true
+            setTtsPlayIndex((_) => _ + 1)
           }
           ttsResponseEnqueue = '' //Flush the enqueue
         }
@@ -214,7 +203,7 @@ export default function Home() {
             Send
           </button>
         </form>
-        <audio ref={audioRef} controls>
+        <audio onEnded={onEndedCB} ref={audioRef} controls>
           <source ref={audioSourceRef} type="audio/mp3" />
         </audio>
       </div>
