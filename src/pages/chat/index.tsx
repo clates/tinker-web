@@ -1,20 +1,20 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet'
 import { useTranslation } from 'react-i18next'
-import { Loading } from 'src/components/loading'
 import OpenAI from 'openai'
 import { SpeechCreateParams } from 'openai/resources/audio/speech'
+import ChatBubble from 'src/components/chatBubble'
 
 const makeAggroAI = (name: string) => ({
   role: Role.System,
-  content: `You are roleplaying as the character "${name}. 
-  You must follow the following rules while roleplaying:
+  content: `You are roleplaying as the character "${name}". 
+  You must adhere to the following rules while roleplaying:
   1) You should always respond as ${name}. Never as yourself.
   2) You should only say thing that ${name} would say. 
   ${name}'s job is to be an unintentionally condescending friend. 
   ${name} is always trying to help, but ${name} is always a little bit off.
   ${name} acts like a little bit of a know-it-all, but ${name} would never say so.
-  ${name} never repeats themseves, and when agitated ${name} will leave the conversation to go eat.
+  ${name} never repeats themselves, and when agitated ${name} will leave the conversation to go eat.
   ${name} is brief in their responses and uses frequent explicit and vulgar language.
   ${name} is sometimes passive-aggressive when agitated.
   ${name} doesn't reference their own traits, but they do reference the traits of the person they are talking to.
@@ -23,18 +23,21 @@ const makeAggroAI = (name: string) => ({
 
 const makeFriendlyAI = (name: string) => ({
   role: Role.System,
-  content: `You are roleplaying as the character "${name}. 
-  You must follow the following rules while roleplaying:
+  content: `You are roleplaying as the character "${name}". 
+  You must adhere to the following rules while roleplaying:
   1) You should always respond as ${name}. Never as yourself.
   2) You should only say thing that ${name} would say. 
-  ${name}'s job is to be a friendly and helpful friend. 
-  ${name} is always trying to help, and ${name} is always on point.
-  ${name} acts like a know-it-all, but ${name} would never say so.
-  ${name} never repeats themseves
+  ${name}'s primary role is to be an educator and encourage learning.
+  ${name} primarily teaches elementary school students and should limit their vocabulary to that level.
+  When asked about a topic, ${name} should provide a brief and simple explanation. 
+  ${name} can infrequently ask questions to gauge understanding of a topic.
+  If probed with a follow up question like "why" or "how", ${name} should provide a more detailed explanation using up to high school vocabulary and understanding.
+  When dealing with a question that seems like gibberish, babble, or nonsense, ${name} should ask for clarification.
+  ${name} never repeats themselves
   ${name} is brief in their responses and never uses explicit or vulgar language.
-  ${name} is patient cand kind.
+  ${name} is patient and kind.
   ${name} doesn't reference their own traits, but they do reference the traits of the person they are talking to.
-  Respond only with the content that ${name} would say. Don't prefix your responses with <|assistant|> or anything else.`,
+  Respond only with the content that ${name} would say.`,
 })
 
 enum Role {
@@ -52,8 +55,8 @@ const openai = new OpenAI({
 export default function Home() {
   const { t } = useTranslation('translation')
   const [messages, setMessages] = useState<{ role: Role; content: string }[]>([
-    //makeAggroAI('Gummy')
-    //makeFriendlyAI('Tinker')
+    // makeAggroAI('Gummy'),
+    makeFriendlyAI('Tinker'),
   ])
   const [loading, setLoading] = useState(false)
   const [ttsPlayQueue, setTtsPlayQueue] = useState<string[]>([])
@@ -61,6 +64,7 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioSourceRef = useRef<HTMLSourceElement>(null)
+  const scrollToBottomRef = useRef<HTMLDivElement>(null)
 
   // When the audio ends, play the next item in the queue.
   const onEndedCB = () => {
@@ -76,6 +80,11 @@ export default function Home() {
       setTtsPlayIndex(0)
     }
   }
+  useEffect(() => {
+    if (scrollToBottomRef.current) {
+      scrollToBottomRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages])
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -88,10 +97,11 @@ export default function Home() {
       setLoading(true)
 
       const chatCompletion = await openai.chat.completions.create({
-        model: 'phi-3-mini-4k-instruct',
+        model: 'llama-3-smaug-8b',
         messages: [...prevMessages, newMessage],
-        frequency_penalty: 0.3,
-        presence_penalty: 0.6,
+        frequency_penalty: 0.8,
+        presence_penalty: 0.5,
+        temperature: 0.4,
         stream: true,
       })
 
@@ -176,20 +186,21 @@ export default function Home() {
         {
           // This is the chat window
         }
-        <div className="flex-grow overflow-y-auto">
+        <div className="flex flex-grow flex-col gap-1.5 overflow-y-auto">
           {messages.map(
-            (message) =>
+            (message, idx) =>
               message.role !== Role.System && (
-                <div
+                <ChatBubble
+                  message={message.content}
                   key={message.content}
-                  className={`p-2 ${message.role === Role.User ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-                >
-                  {message.content}
-                </div>
+                  isOutgoing={message.role === Role.User}
+                  isPulsating={ttsPlayQueue.length > 0 && idx === messages.length - 1}
+                />
               ),
           )}
+          {loading && <ChatBubble message={'...'} isOutgoing={false} isPulsating={true} />}
+          <div ref={scrollToBottomRef}></div>
         </div>
-        {loading && <Loading />}
 
         <form onSubmit={handleSubmit} className="p-2">
           <input
@@ -199,13 +210,18 @@ export default function Home() {
             placeholder="Type your message..."
             className="w-full rounded border border-gray-300 p-2"
           />
-          <button type="submit" className="mt-2 rounded bg-blue-500 px-4 py-2 text-white">
-            Send
-          </button>
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center justify-start gap-2">
+              <button className="rounded bg-red-500 p-2 text-white">Record</button>
+              <button type="submit" className="rounded bg-blue-500 px-4 py-2 text-white">
+                Send
+              </button>
+            </div>
+            <audio onEnded={onEndedCB} ref={audioRef} controls>
+              <source ref={audioSourceRef} type="audio/mp3" />
+            </audio>
+          </div>
         </form>
-        <audio onEnded={onEndedCB} ref={audioRef} controls>
-          <source ref={audioSourceRef} type="audio/mp3" />
-        </audio>
       </div>
     </>
   )
