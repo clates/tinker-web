@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, useEffect, useRef } from 'react'
 import { Helmet } from 'react-helmet'
 import { useTranslation } from 'react-i18next'
-import OpenAI from 'openai'
-import { SpeechCreateParams } from 'openai/resources/audio/speech'
 import ChatBubble from 'src/components/chatBubble'
+import { Loading } from 'src/components/loading'
+import { useOpenAiMessaging } from 'src/hooks/use-openai-messaging'
+import { Role, SystemMessage } from 'src/types/messages'
 
 const makeAggroAI = (name: string) => ({
   role: Role.System,
@@ -21,7 +22,7 @@ const makeAggroAI = (name: string) => ({
   Respond only with the content that ${name} would say. Don't prefix your responses with <|assistant|> or anything else.`,
 })
 
-const makeFriendlyAI = (name: string) => ({
+const makeFriendlyAI = (name: string): SystemMessage => ({
   role: Role.System,
   content: `You are roleplaying as the character "${name}". 
   You must adhere to the following rules while roleplaying:
@@ -40,132 +41,25 @@ const makeFriendlyAI = (name: string) => ({
   Respond only with the content that ${name} would say.`,
 })
 
-enum Role {
-  User = 'user',
-  Assistant = 'assistant',
-  System = 'system',
-}
-
-const openai = new OpenAI({
-  baseURL: 'http://host.docker.internal:8080/v1', // This is the default and can be omitted
-  apiKey: '', // This is the default and can be omitted
-  dangerouslyAllowBrowser: true, // I know what I'm doing
-})
-
 export default function Home() {
   const { t } = useTranslation('translation')
-  const [messages, setMessages] = useState<{ role: Role; content: string }[]>([
-    // makeAggroAI('Gummy'),
-    makeFriendlyAI('Tinker'),
-  ])
-  const [loading, setLoading] = useState(false)
-  const [ttsPlayQueue, setTtsPlayQueue] = useState<string[]>([])
-  const [ttsPlayIndex, setTtsPlayIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioSourceRef = useRef<HTMLSourceElement>(null)
   const scrollToBottomRef = useRef<HTMLDivElement>(null)
+  const [messages, setMessages, isLoading, isPlayingTTS] = useOpenAiMessaging(makeFriendlyAI('Tinker'), audioRef)
 
-  // When the audio ends, play the next item in the queue.
-  const onEndedCB = () => {
-    console.log(`TTS Queue ended, playing item ${ttsPlayIndex} of ${ttsPlayQueue.length} `)
-    if (audioRef.current !== null && ttsPlayIndex < ttsPlayQueue.length) {
-      audioRef.current.src = ttsPlayQueue[ttsPlayIndex] || ''
-      audioRef.current.load()
-      audioRef.current.play()
-      setTtsPlayIndex((_) => _ + 1)
-    } else {
-      console.log('TTS Queue is exhausted, resetting.')
-      setTtsPlayQueue([])
-      setTtsPlayIndex(0)
-    }
-  }
   useEffect(() => {
     if (scrollToBottomRef.current) {
       scrollToBottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages])
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const prevMessages = [...messages]
     if (inputRef.current && inputRef.current?.value.trim() !== '') {
-      const newMessage = { role: Role.User, content: inputRef.current.value.trim() }
-      setMessages((prevMessages) => [...prevMessages, newMessage])
+      setMessages(messages.concat([{ role: Role.User, content: inputRef.current.value.trim() }]))
       inputRef.current.value = ''
-
-      setLoading(true)
-
-      const chatCompletion = await openai.chat.completions.create({
-        model: 'llama-3-smaug-8b',
-        messages: [...prevMessages, newMessage],
-        frequency_penalty: 0.8,
-        presence_penalty: 0.5,
-        temperature: 0.4,
-        stream: true,
-      })
-
-      // TODO: Fix this
-      //Streaming the response
-      let chatResponse = ''
-      let ttsResponseEnqueue = ''
-      const ttsSynthesizeQueue: string[] = []
-      let playedFirstBlob = false
-
-      for await (const chunk of chatCompletion) {
-        // Turn off loading, we have a response
-        setLoading(false)
-
-        // Chat response
-        chatResponse += chunk.choices[0].delta.content
-        setMessages([...prevMessages, newMessage, { role: Role.Assistant, content: chatResponse }])
-
-        // TTS
-        ttsResponseEnqueue += chunk.choices[0].delta.content
-        if (
-          // Natural pauses in speech
-          ([',', '.', '?', '!'].includes(chunk.choices[0].delta.content || '') &&
-            // Make sure we have a reasonable chunk.
-            ttsResponseEnqueue.length > 100 &&
-            // Arbitrary limit, the API has a 4096 character limit
-            ttsResponseEnqueue.length < 2000) ||
-          // Submit to the TTS if the chunking is over
-          chunk.choices[0].finish_reason === 'stop'
-        ) {
-          // Synthesize the audio
-          // TODO: This should be delegated to a worker thread
-          // TODO: This should be a queue
-          ttsSynthesizeQueue.push(ttsResponseEnqueue)
-          const ttsResponse = await openai.audio.speech.create({
-            input: ttsResponseEnqueue,
-            model: 'voice-en-us-ryan-high',
-            voice: 'alloy', // Not used in LocalAi
-            // backend: 'coqui', // Not used in OpenAi
-          } as SpeechCreateParams)
-          const responseBlob = await ttsResponse.blob()
-          const audioSource = URL.createObjectURL(responseBlob)
-
-          console.log('Queueing TTS', audioSource)
-          // Start the queue processing if this is the only item.
-          setTtsPlayQueue((oldQueue) => [...oldQueue, audioSource])
-          if (audioRef.current !== null && !playedFirstBlob) {
-            console.log('Starting TTS Queue...')
-            audioRef.current.src = audioSource || ''
-            audioRef.current.load()
-            audioRef.current.play()
-            playedFirstBlob = true
-            setTtsPlayIndex((_) => _ + 1)
-          }
-          ttsResponseEnqueue = '' //Flush the enqueue
-        }
-      }
-
-      // Non-streaming responses
-      // setMessages((prevMessages) => [
-      //   ...prevMessages,
-      //   { role: Role.Assistant, content: chatCompletion.choices[0].message.content || '' },
-      // ])
-      // setLoading(false)
     }
   }
 
@@ -194,17 +88,21 @@ export default function Home() {
                   message={message.content}
                   key={message.content}
                   isOutgoing={message.role === Role.User}
-                  isPulsating={ttsPlayQueue.length > 0 && idx === messages.length - 1}
+                  isPulsating={isPlayingTTS && idx === messages.length - 1}
                 />
               ),
           )}
-          {loading && <ChatBubble message={'...'} isOutgoing={false} isPulsating={true} />}
+          {isLoading && (
+            <ChatBubble isOutgoing={false} isPulsating={true}>
+              <Loading />
+            </ChatBubble>
+          )}
           <div ref={scrollToBottomRef}></div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-2">
           <input
-            disabled={loading}
+            disabled={isLoading || isPlayingTTS}
             ref={inputRef}
             type="text"
             placeholder="Type your message..."
@@ -217,7 +115,7 @@ export default function Home() {
                 Send
               </button>
             </div>
-            <audio onEnded={onEndedCB} ref={audioRef} controls>
+            <audio ref={audioRef} controls>
               <source ref={audioSourceRef} type="audio/mp3" />
             </audio>
           </div>
