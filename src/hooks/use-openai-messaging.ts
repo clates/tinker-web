@@ -40,7 +40,7 @@ export function useOpenAiMessaging(systemPrompt: SystemMessage, audioRef: React.
           chunk.choices[0].finish_reason === 'stop'
         ) {
           // Synthesize the audio
-          console.log('Enqueueing TTS:', ttsEnqueue)
+          console.debug('Enqueueing TTS:', ttsEnqueue)
           addToTtsQueue(ttsEnqueue)
           //Flush the enqueue
           ttsEnqueue = ''
@@ -50,13 +50,10 @@ export function useOpenAiMessaging(systemPrompt: SystemMessage, audioRef: React.
     [addToTtsQueue, openai.chat.completions],
   )
   useEffect(() => {
-    console.log('Messages was updated: ', messages[messages.length - 1], isLoading)
-
     if (messages.length === 0) {
       setMessages((messages) => [...messages, systemPrompt])
     } else if (messages.length > 0 && messages[messages.length - 1].role === Role.User && !isLoading) {
       // The user has sent a message, so we need to send it to OpenAI
-      console.log('Submitting user message to OpenAI')
       submitUserMessage(messages)
     }
   }, [addToTtsQueue, messages, openai.chat.completions, submitUserMessage, systemPrompt])

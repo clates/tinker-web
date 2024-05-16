@@ -5,8 +5,9 @@ import ChatBubble from 'src/components/chatBubble'
 import { Loading } from 'src/components/loading'
 import { useOpenAiMessaging } from 'src/hooks/use-openai-messaging'
 import { Role, SystemMessage } from 'src/types/messages'
+import { useOpenAIStt } from 'src/hooks/use-openai-stt'
 
-const makeAggroAI = (name: string) => ({
+const makeAggroAI = (name: string): SystemMessage => ({
   role: Role.System,
   content: `You are roleplaying as the character "${name}". 
   You must adhere to the following rules while roleplaying:
@@ -41,15 +42,17 @@ const makeFriendlyAI = (name: string): SystemMessage => ({
   Respond only with the content that ${name} would say.`,
 })
 
-export default function Home() {
+export default function Chat() {
   const { t } = useTranslation('translation')
   const inputRef = useRef<HTMLInputElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const audioSourceRef = useRef<HTMLSourceElement>(null)
   const scrollToBottomRef = useRef<HTMLDivElement>(null)
-  const [messages, setMessages, isLoading, isPlayingTTS] = useOpenAiMessaging(makeFriendlyAI('Tinker'), audioRef)
+  const [messages, setMessages, isLoading, isPlayingTTS] = useOpenAiMessaging(makeAggroAI('Gummy'), audioRef)
+  const [record, stopRecording, isRecording, sttIsLoading, recordedText] = useOpenAIStt()
 
   useEffect(() => {
+    console.debug('Messages was updated: ', messages[messages.length - 1])
     if (scrollToBottomRef.current) {
       scrollToBottomRef.current.scrollIntoView({ behavior: 'smooth' })
     }
@@ -64,11 +67,16 @@ export default function Home() {
   }
 
   useEffect(() => {
-    const lastMessage = messages[messages.length - 1]
-    if (lastMessage?.role === Role.Assistant && inputRef.current) {
-      inputRef.current.focus()
+    if (!isPlayingTTS) {
+      inputRef.current?.focus()
     }
-  }, [messages])
+  }, [isPlayingTTS])
+
+  useEffect(() => {
+    if (recordedText) {
+      setMessages((old) => old.concat([{ role: Role.User, content: recordedText }]))
+    }
+  }, [recordedText, setMessages])
 
   return (
     <>
@@ -110,7 +118,16 @@ export default function Home() {
           />
           <div className="mt-2 flex items-center justify-between">
             <div className="flex items-center justify-start gap-2">
-              <button className="rounded bg-red-500 p-2 text-white">Record</button>
+              <button
+                className={`rounded bg-red-500 p-2 text-white ${
+                  isRecording ? 'animate-pulse bg-red-700 ' : 'bg-red-500'
+                }`}
+                onClick={() => (isRecording ? stopRecording() : record())}
+              >
+                {sttIsLoading && <Loading />}
+                {isRecording && 'Stop'}
+                {!isRecording && !sttIsLoading && 'Record'}
+              </button>
               <button type="submit" className="rounded bg-blue-500 px-4 py-2 text-white">
                 Send
               </button>

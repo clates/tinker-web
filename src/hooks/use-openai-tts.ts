@@ -11,14 +11,14 @@ export function useOpenAiTts(audioRef: React.RefObject<HTMLAudioElement>) {
       // When the audio ends, play the next item in the queue.
       audioRef.current.onended = () => {
         if (audioRef.current === null) return
-        console.log(`TTS ended, playing next item. ${ttsPlayQueue.length} remaining`)
+        console.debug(`TTS ended, playing next item. ${ttsPlayQueue.length} remaining`)
         if (ttsPlayQueue.length > 0) {
           audioRef.current.src = ttsPlayQueue[0] || ''
           audioRef.current.load()
           audioRef.current.play()
           setTtsPlayQueue(ttsPlayQueue.slice(1))
         } else {
-          console.log('TTS Queue is exhausted, resetting.')
+          console.debug('TTS Queue is exhausted, resetting.')
           setIsPlayingTTS(false)
         }
       }
@@ -41,7 +41,7 @@ export function useOpenAiTts(audioRef: React.RefObject<HTMLAudioElement>) {
     (text: string) => {
       // Use Promises here to not block the main thread.
       //TODO: This has a race condition probably. Don't care enough to fix it.
-      console.log('Sending TTS request:', text)
+      console.debug('Sending TTS request:', text)
       const ttsRequest = openai.audio.speech
         .create({
           input: text,
@@ -52,7 +52,7 @@ export function useOpenAiTts(audioRef: React.RefObject<HTMLAudioElement>) {
         .then((response) => {
           response.blob().then((blob) => {
             const audioSource = URL.createObjectURL(blob)
-            console.log('Queueing TTS', audioSource)
+            console.debug('Queueing TTS', audioSource)
             setTtsPlayQueue((_) => [..._, audioSource])
           })
         })
