@@ -3,16 +3,17 @@ export enum Role {
   Assistant = 'assistant',
   System = 'system',
 }
-export type SystemMessage = {
+export type BaseMessage = {
+  id: string
+  content: string
+}
+export type SystemMessage = BaseMessage & {
   role: Role.System
-  content: string
 }
-export type UserMessage = {
+export type UserMessage = BaseMessage & {
   role: Role.User
-  content: string
 }
-export type AssistantMessage = {
+export type AssistantMessage = BaseMessage & {
   role: Role.Assistant
-  content: string
 }
 export type Message = UserMessage | AssistantMessage | SystemMessage

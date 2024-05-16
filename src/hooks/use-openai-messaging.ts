@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useOpenAI } from './use-openai'
 import { useOpenAiTts } from './use-openai-tts'
 import { Role, Message, SystemMessage } from 'src/types/messages'
+import { v4 as uuidv4 } from 'uuid'
 
 export function useOpenAiMessaging(systemPrompt: SystemMessage, audioRef: React.RefObject<HTMLAudioElement>) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -22,11 +23,12 @@ export function useOpenAiMessaging(systemPrompt: SystemMessage, audioRef: React.
 
       let chatResponse = ''
       let ttsEnqueue = ''
+      const newMessageId = uuidv4()
       for await (const chunk of chatCompletion) {
         setIsLoading(false)
         chatResponse += chunk.choices[0].delta.content
         ttsEnqueue += chunk.choices[0].delta.content
-        setMessages(messages.concat([{ role: Role.Assistant, content: chatResponse }]))
+        setMessages(messages.concat([{ id: newMessageId, role: Role.Assistant, content: chatResponse }]))
 
         // Determine if we should submit the TTS
         if (

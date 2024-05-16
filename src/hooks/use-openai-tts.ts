@@ -50,11 +50,16 @@ export function useOpenAiTts(audioRef: React.RefObject<HTMLAudioElement>) {
           // backend: 'coqui', // Not used in OpenAi
         })
         .then((response) => {
-          response.blob().then((blob) => {
-            const audioSource = URL.createObjectURL(blob)
-            console.debug('Queueing TTS', audioSource)
-            setTtsPlayQueue((_) => [..._, audioSource])
-          })
+          response
+            .blob()
+            .then((blob) => {
+              const audioSource = URL.createObjectURL(blob)
+              console.debug('Queueing TTS', audioSource)
+              setTtsPlayQueue((_) => [..._, audioSource])
+            })
+            .catch((error) => {
+              console.error('Failed to queue TTS:', error)
+            })
         })
         .catch((error) => {
           console.error('Failed to generate TTS:', error)

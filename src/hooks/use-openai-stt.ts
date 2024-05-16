@@ -38,6 +38,9 @@ export function useOpenAIStt() {
         setRecordedText(response.text)
         setAudioData(undefined)
       })
+      .catch((error) => {
+        console.error('Exception during STT transcription:', error)
+      })
       .finally(() => {
         setSttIsLoading(false)
       })
